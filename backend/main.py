@@ -70,8 +70,19 @@ async def send_notification_async(listings):
     sender = os.environ.get('SENDER_MAIL')
     receiver = os.environ.get('RECEIVER_MAIL')
     
-    # Create HTML email content
-    html_content = """
+    # Create the HTML content with f-string for immediate formatting
+    listings_html = "\n".join([
+        f"""
+        <div class="listing">
+            <h3>{listing['title']}</h3>
+            <p class="price">{listing['price']}</p>
+            <p>{listing['description']}</p>
+            <a href="{listing['image_url']}">View Listing</a>
+        </div>
+        """ for listing in listings
+    ])
+
+    html_content = f"""
     <html>
     <head>
         <style>
@@ -94,35 +105,19 @@ async def send_notification_async(listings):
     </head>
     <body>
         <h2>New Listings Found!</h2>
-        <p>We found {count} new listing(s):</p>
+        <p>We found {len(listings)} new listing(s):</p>
         {listings_html}
     </body>
     </html>
     """
-    
-    # Generate listings HTML
-    listings_html = ""
-    for listing in listings:
-        listings_html += f"""
-        <div class="listing">
-            <img src="{listing['image_url']}" alt="{listing['title']}">
-            <h3>{listing['title']}</h3>
-            <p class="price">{listing['price']}</p>
-            <p>{listing['description']}</p>
-        </div>
-        """
-    
-    # Send email
-    subject = f"New Ebay Kleinanzeigen Listings - {len(listings)} found"
-    message = f"Subject: {subject}\nMIME-Version: 1.0\nContent-Type: text/html; charset=utf-8\n\n{html_content.format(count=len(listings), listings_html=listings_html)}"
 
-    # Send email
-    send_email(sender, os.environ.get('SENDER_PASSWORD'), receiver, subject, message)
+    subject = f"New Ebay Kleinanzeigen Listings - {len(listings)} found"
+    send_email(sender, os.environ.get('SENDER_PASSWORD'), receiver, subject, html_content)
 
 def get_listings():
     global query
-    if query == "":
-        return
+    if not query:
+        return []
     # Fügt die Query in den Ebay-Kleinanzeigen URL ein. / Inserts the query into the Ebay-Kleinanzeigen URL.
     URL = "https://www.kleinanzeigen.de/s-eschborn/" + \
         query + "/k0l4558r20" # 20 stands for 20 km radius
@@ -163,7 +158,8 @@ def get_listings():
         for li in li_elements:
             listing = {}
             article = li.find('article', class_='aditem')
-            
+            if not article:
+                continue
             # Extract image URL
             image_div = article.find('div', class_='aditem-image')
             image_a = image_div.find('a')
