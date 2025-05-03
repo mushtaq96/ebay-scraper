@@ -1,3 +1,4 @@
+aiosqlite
 anyio==3.6.2
 asyncpg==0.27.0
 beautifulsoup4==4.12.2

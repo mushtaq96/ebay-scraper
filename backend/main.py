@@ -9,6 +9,9 @@ import schedule
 import time
 import threading
 from dotenv import load_dotenv
+
+from urllib.parse import quote_plus
+
 load_dotenv()
 
 app = FastAPI()
@@ -40,38 +43,89 @@ async def startup():
 
 
 @app.get("/query")
-async def get_query(q: str, conn=Depends(get_db_conn)):
-    # code for checking ebay kleinanzeigen listings and sending email
-    global query
-    query = q
-    listings = get_listings()
-    for listing in listings:
-        async with get_db_conn() as conn:
-            if not await link_exists(conn, listing):
-                await insert_links(conn, listing)
-                print(f'New listing found: {listing}')
-            else:
-                #remove listing from list
-                listings.remove(listing)
-    if len(listings) > 0:
-        sender = os.environ.get('SENDER_MAIL')
-        password = os.environ.get('SENDER_PASSWORD')
-        receiver = os.environ.get('RECEIVER_MAIL')
-        subject = query + ' New Ebay Listing ACTION NEEDED!'
-        body = 'New listing found. Please check the link or links below: \n' + \
-            '\n'.join(listings)
-        send_email(sender, password, receiver, subject, body)
-    return {"message": f"Query received: {query}"}
+async def get_query(q: str):
+    async with get_db_conn() as conn:
+        # code for checking ebay kleinanzeigen listings and sending email
+        global query
+        query = quote_plus(q)
+        listings = get_listings()
 
+        # Process listings
+        new_listings = []
+        for listing in listings:
+            exists = await link_exists(conn, listing['image_url'])
+            print(f"Checking if link exists: {listing['image_url']} - Exists: {exists}")
+            if not exists:
+                await insert_links(conn, listing['image_url'])
+                new_listings.append(listing)
+                print(f"Added to new_listings: {listing['image_url']}") 
+        print(f"Total new listings: {len(new_listings)}")
+        
+        # Send email with formatted content
+        if new_listings:
+            await send_notification_async(new_listings)
+        return {"message": f"Query received: {query}", "new_listings": len(new_listings)}
+
+async def send_notification_async(listings):
+    sender = os.environ.get('SENDER_MAIL')
+    receiver = os.environ.get('RECEIVER_MAIL')
+    
+    # Create HTML email content
+    html_content = """
+    <html>
+    <head>
+        <style>
+            .listing {{
+                border: 1px solid #ddd;
+                margin: 10px 0;
+                padding: 15px;
+                border-radius: 5px;
+            }}
+            .listing img {{
+                max-width: 200px;
+                height: auto;
+                margin: 10px 0;
+            }}
+            .price {{
+                font-weight: bold;
+                color: #2c5282;
+            }}
+        </style>
+    </head>
+    <body>
+        <h2>New Listings Found!</h2>
+        <p>We found {count} new listing(s):</p>
+        {listings_html}
+    </body>
+    </html>
+    """
+    
+    # Generate listings HTML
+    listings_html = ""
+    for listing in listings:
+        listings_html += f"""
+        <div class="listing">
+            <img src="{listing['image_url']}" alt="{listing['title']}">
+            <h3>{listing['title']}</h3>
+            <p class="price">{listing['price']}</p>
+            <p>{listing['description']}</p>
+        </div>
+        """
+    
+    # Send email
+    subject = f"New Ebay Kleinanzeigen Listings - {len(listings)} found"
+    message = f"Subject: {subject}\nMIME-Version: 1.0\nContent-Type: text/html; charset=utf-8\n\n{html_content.format(count=len(listings), listings_html=listings_html)}"
+
+    # Send email
+    send_email(sender, os.environ.get('SENDER_PASSWORD'), receiver, subject, message)
 
 def get_listings():
     global query
     if query == "":
         return
     # Fügt die Query in den Ebay-Kleinanzeigen URL ein. / Inserts the query into the Ebay-Kleinanzeigen URL.
-    # URL = "https://www.ebay-kleinanzeigen.de/stadt/stuttgart/" + query + "/k0l9280"
-    URL = "https://www.kleinanzeigen.de/s-stuttgart/" + \
-        query + "/k0l9280"
+    URL = "https://www.kleinanzeigen.de/s-eschborn/" + \
+        query + "/k0l4558r20" # 20 stands for 20 km radius
 
     # Setzt die Headers der Anfrage (Den User-Agent), damit Ebay-Kleinanzeigen die Anfrage nicht blockt. / Sets the headers of the request (the User-Agent) so that Ebay-Kleinanzeigen does not block the request.
     headers = {
@@ -100,24 +154,35 @@ def get_listings():
     ePreise = []
 
     count = 0
-    url_list = []
-    baseURL = 'https://www.ebay-kleinanzeigen.de'
+    listings = []
+    baseURL = 'https://www.kleinanzeigen.de'
     result = soup.find_all('ul', {'id': 'srchrslt-adtable'})
+    
     for ul in result:
         li_elements = ul.find_all('li', {'class': 'ad-listitem'})
-        # print(li_elements)
         for li in li_elements:
-            link = li.find('a')
-            if link:
-                href = link.get('href')
-
-                if href and '/s-anzeige/' in href:
-                    url_list.append(baseURL + href)
-                    # print(href)
-                    count = count + 1
-
-    return url_list
-
+            listing = {}
+            article = li.find('article', class_='aditem')
+            
+            # Extract image URL
+            image_div = article.find('div', class_='aditem-image')
+            image_a = image_div.find('a')
+            listing['image_url'] = 'https://www.kleinanzeigen.de' + image_a['href']
+            
+            # Extract price
+            price_div = article.find('div', class_='aditem-main--middle--price-shipping')
+            if price_div:
+                price_text = price_div.find('p', class_='aditem-main--middle--price-shipping--price').text.strip()
+                listing['price'] = price_text
+            
+            # Extract title and description
+            title_a = article.find('h2', class_='text-module-begin').find('a')
+            listing['title'] = title_a.text.strip()
+            listing['description'] = article.find('p', class_='aditem-main--middle--description').text.strip()
+            
+            listings.append(listing)
+    
+    return listings
 
 def run_schedule():
     while True:
