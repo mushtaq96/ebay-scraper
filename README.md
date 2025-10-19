@@ -48,15 +48,6 @@ backend/
 
 - Note to self : right now running backend locally and the rest on docker for better debugging experience.
 
-
-
-
-
-
-
-
-
-
 ### Dev Notes
 
 Use Node Version Manager (NVM) to manage multiple active Node.js versions. It allows you to install and switch between different versions of Node.js as needed. Here's how you can install NVM and use it to install Node.js:
@@ -104,10 +95,6 @@ nvm use --lts # Use the latest LTS version
 
 Remember, every new shell session will use the default Node.js version you've set with `nvm alias default`. If you want to change the default version, use `nvm alias default <version>`.
 
-
-
-
-
 In a typical CI/CD (Continuous Integration/Continuous Deployment) setup, you would use both branches, but for different purposes:
 
 1. **Develop Branch**: This is where active development happens. Developers create feature branches off of this branch, and once their work is complete and tested, they merge their feature branches back into the develop branch. The CI process runs on every push to the develop branch (and possibly on feature branches as well), building the project and running any tests to ensure that new changes haven't broken anything.
@@ -118,31 +105,20 @@ After publishing a release (i.e., merging develop into main and deploying it), y
 
 Remember, this is just a typical setup and might not fit every project's needs. The key is to find a workflow that works best for your team and your project.
 
-
-
-
-
-
 Try to do this once more,
 https://www.patrickkoch.dev/posts/post_20/
 https://learn.microsoft.com/en-us/azure/container-instances/container-instances-multi-container-yaml
 
 else do the vm and then install docker and then docker compose.
 
-or 
+or
 
 azure kubernetes cluster/ service
-
-
-
 
 Deployment
 i am using the azure portal to deploy.
 I created a VM and have the username - mushtaq96
 I am using cent OS and it does not have docker capabilities.
-
-
-
 
 Yes, you need to have Docker Compose installed on your Azure Virtual Machine to use it. Docker Compose is a tool for defining and running multi-container Docker applications. With Compose, you use a YAML file to configure your application's services, which allows you to manage your application as a single entity rather than dealing with individual containers.
 
@@ -166,23 +142,21 @@ sudo chmod +x /usr/local/bin/docker-compose
 docker-compose --version
 ```
 
-
-
 Whether you should use Docker or Podman depends on your specific needs and constraints. Here are some points to consider:
 
 **Docker**:
+
 - Docker is widely used and has a large community, which means it's easy to find help and resources online.
 - Docker uses a client-server model. The Docker client communicates with the Docker daemon, which does the heavy lifting of building, running, and managing Docker containers.
 - Docker Compose is a tool for defining and running multi-container Docker applications. It uses a YAML file to configure your application's services.
 
 **Podman**:
+
 - Podman is a newer, daemonless container engine developed by Red Hat.
 - It's designed to be a drop-in replacement for Docker, offering similar functionality but without a daemon, making it more secure and lightweight.
 - Podman is the default on Red Hat Enterprise Linux (RHEL), Fedora, and CentOS Stream.
 - Podman has rootless support, which allows you to run containers as a non-root user.
 - If you want to use Docker Compose with Podman, you can use `podman-compose`, a script that translates Docker Compose files to Podman-compatible files.
-
-
 
 To monitor your Podman deployment on CentOS, you can use the following commands:
 
@@ -230,8 +204,7 @@ Source: Conversation with Bing, 21/10/2023
 (15) Podman Cheat Sheet - GitHub: Let’s build from here. https://github.com/redhat-developer/cheat-sheets/blob/master/podman.adoc.
 (16) undefined. https://podman.io/getting-started/network.
 
-
-
-
 Log into the VM using local shell.
 ssh -i ebay-scraper_key.pem mushtaq96@98.67.160.228
+
+python -m pytest backend/tests/test_db.py

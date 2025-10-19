@@ -1,33 +1,20 @@
-# pytest is a testing framework for Python that allows you to easily create small, simple tests
+# backend/tests/test_db.py
 import pytest
-
-# Here we're importing the get_db_conn function from the db module in the backend.db package
 from backend.db.db import create_links_table, get_db_conn, get_links, insert_links, link_exists
-
-# The pytest.mark.asyncio decorator is used to mark a test function as a coroutine
-# It tells pytest to handle this function asynchronously
 
 
 @pytest.mark.asyncio
-# This is the test function for get_db_conn
 async def test_get_db_conn():
-    # We're using the async with statement to handle the context manager returned by get_db_conn
-    # The async with statement is used for context management in asynchronous code
     async with get_db_conn() as conn:
-        # Here we're asserting that conn is not None
-        # If get_db_conn is working correctly, it should return a connection object, which is not None
-        # If conn is None, then the assert statement will fail, and pytest will know that our test has failed
         assert conn is not None
 
 
 @pytest.mark.asyncio
 async def test_create_links_table():
     async with get_db_conn() as conn:
-        # We call the create_links_table function and pass the connection to it
         await create_links_table(conn)
-        # After creating the table, we try to fetch from it to see if it exists
-        result = await conn.fetch('SELECT * FROM links')
-        # If the table doesn't exist, an error will be thrown and the test will fail
+        async with conn.execute('SELECT * FROM links') as cursor:
+            result = await cursor.fetchall()
         assert result is not None
 
 
@@ -35,28 +22,21 @@ async def test_create_links_table():
 async def test_insert_links():
     url = 'https://www.example.com'
     async with get_db_conn() as conn:
-        # We call the insert_links function and pass the connection and a URL to it
         await insert_links(conn, url)
-        # After inserting the link, we fetch from the table where URL is the one we inserted
-        result = await conn.fetch('SELECT * FROM links WHERE url = $1', url)
-        # If the URL doesn't exist in the table, then our insert_links function didn't work correctly and the test will fail
-        assert len(result) > 0
+        exists = await link_exists(conn, url)
+        assert exists is True
 
 
 @pytest.mark.asyncio
 async def test_get_links():
     async with get_db_conn() as conn:
-        # We call the get_links function and pass the connection to it
         links = await get_links(conn)
-        # If get_links is working correctly, it should return a list of links. If it doesn't, then our test will fail.
         assert links is not None
 
 
 @pytest.mark.asyncio
-async def test_link_exists():
-    url = 'https://www.example.com'
+async def test_link_exists_false():
+    url = 'https://www.example-does-not-exist-12345.com'
     async with get_db_conn() as conn:
-        # We call the link_exists function and pass the connection and a URL to it
         exists = await link_exists(conn, url)
-        # If link_exists is working correctly, it should return True if the URL exists in the table. If it doesn't return True, then our test will fail.
-        assert exists == True
+        assert exists is False

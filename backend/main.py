@@ -1,16 +1,22 @@
+# backend/main.py
 import os
-from fastapi import FastAPI, Depends, HTTPException
+import logging
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import aiohttp
 from bs4 import BeautifulSoup
-from .emailing.sender import send_email
-from .db.db import get_db_conn, get_links, insert_links, link_exists, create_links_table
-import schedule
-import asyncio
-from dotenv import load_dotenv
+from backend.emailing.sender import send_email  # Keep email import
+from backend.alerting.telegram import send_telegram_alert  # Import telegram
+from backend.db.db import get_db_conn, link_exists, insert_links, create_links_table
 from urllib.parse import quote_plus
+from dotenv import load_dotenv
 
 load_dotenv()
+
+# Set up basic logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 app = FastAPI()
 
 origins = [
@@ -25,6 +31,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.get("/")
+def read_root():
+    return {"Hello": "World"}
+
+
+query = ""
 
 
 @app.on_event("startup")
@@ -124,83 +138,94 @@ async def get_query(q: str):
                     new_listings.append(listing)
 
             print(f"Total new listings: {len(new_listings)}")
-
             if new_listings:
-                await send_notification_async(new_listings)
+                # Try Telegram first
+                tg_success = await send_notification_async(new_listings, method='telegram')
+                if not tg_success:
+                    # Fallback to email if Telegram fails
+                    logger.info("Telegram failed, attempting email fallback.")
+                    await send_notification_async(new_listings, method='email')
+            else:
+                logger.info(f"No new listings found for query: {q}")
 
             return {"message": f"Query received: {query}", "new_listings": len(new_listings)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-async def send_notification_async(listings):
-    sender = os.environ.get('SENDER_MAIL')
-    receiver = os.environ.get('RECEIVER_MAIL')
+async def send_notification_async(listings, method='telegram'):
+    if method == 'telegram':
+        messages = []
+        for listing in listings:
+            # Escape HTML characters in title/description if necessary, though basic tags are okay with HTML parse_mode
+            title = listing.get('title', 'No Title').replace(
+                '<', '<').replace('>', '>')
+            price = listing.get('price', 'N/A')
+            url = listing.get('image_url', 'No URL')
+            msg = f"🆕 <b>{title}</b>\n💶 {price}\n{url}"
+            messages.append(msg)
+        full_message = "\n\n".join(messages[:10])  # Limit message length
+        return send_telegram_alert(full_message)
 
-    listings_html = "\n".join([
-        f"""
-        <div class="listing">
-        <h3>{listing['title']}</h3>
-        <p class="price">{listing['price']}</p>
-        <p>{listing['description']}</p>
-        <a href="{listing['image_url']}">View Listing</a>
-        </div>
+    elif method == 'email':
+        sender = os.environ.get('SENDER_MAIL')
+        receiver = os.environ.get('RECEIVER_MAIL')
+        if not sender or not receiver:
+            logger.error(
+                "Email sender or receiver not configured. Cannot send email.")
+            return False
+
+        # Create the HTML content with f-string for immediate formatting
+        listings_html = "\n".join([
+            f"""
+            <div class="listing">
+                <h3>{listing.get('title', 'No Title')}</h3>
+                <p class="price">{listing.get('price', 'N/A')}</p>
+                <p>{listing.get('description', '')}</p>
+                <a href="{listing.get('image_url', '#')}">View Listing</a>
+            </div>
+            """ for listing in listings
+        ])
+
+        html_content = f"""
+        <html>
+        <head>
+            <style>
+                .listing {{
+                    border: 1px solid #ddd;
+                    margin: 10px 0;
+                    padding: 15px;
+                    border-radius: 5px;
+                }}
+                .listing img {{
+                    max-width: 200px;
+                    height: auto;
+                    margin: 10px 0;
+                }}
+                .price {{
+                    font-weight: bold;
+                    color: #2c5282;
+                }}
+            </style>
+        </head>
+        <body>
+            <h2>New Ebay Kleinanzeigen Listings Found!</h2>
+            <p>We found {len(listings)} new listing(s):</p>
+            {listings_html}
+        </body>
+        </html>
         """
-        for listing in listings
-    ])
 
-    html_content = f"""
-    <html>
-    <head>
-    <style>
-    .listing {{
-        border: 1px solid #ddd;
-        margin: 10px 0;
-        padding: 15px;
-        border-radius: 5px;
-    }}
-    .listing img {{
-        max-width: 200px;
-        height: auto;
-        margin: 10px 0;
-    }}
-    .price {{
-        font-weight: bold;
-        color: #2c5282;
-    }}
-    </style>
-    </head>
-    <body>
-    <h2>New Listings Found!</h2>
-    <p>We found {len(listings)} new listing(s):</p>
-    {listings_html}
-    </body>
-    </html>
-    """
-
-    subject = f"New Ebay Kleinanzeigen Listings - {len(listings)} found"
-    send_email(sender, os.environ.get('SENDER_PASSWORD'),
-               receiver, subject, html_content)
-
-# Replace the old scheduling code with this async version
-
-
-async def scheduler_task():
-    while True:
-        await asyncio.sleep(120)  # Wait 2 minutes
+        subject = f"New Ebay Kleinanzeigen Listings - {len(listings)} found"
         try:
-            listings = await get_listings("")
-            if listings:
-                await send_notification_async(listings)
+            send_email(sender, os.environ.get('SENDER_PASSWORD'),
+                       receiver, subject, html_content)
+            logger.info("Email notification sent successfully.")
+            return True
         except Exception as e:
-            print(f"Scheduled task error: {str(e)}")
+            logger.error(f"Failed to send email: {e}")
+            return False
 
-
-@app.on_event("startup")
-async def setup_scheduler():
-    asyncio.create_task(scheduler_task())
-
-
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy"}
+    else:
+        logger.error(f"Unknown notification method: {method}")
+        return False
