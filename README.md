@@ -208,3 +208,22 @@ Log into the VM using local shell.
 ssh -i ebay-scraper_key.pem mushtaq96@98.67.160.228
 
 python -m pytest backend/tests/test_db.py
+
+### several potential improvements we could discuss:
+
+Database Operations:
+The current implementation uses separate database connections for each operation
+We could optimize this by using a single connection per request
+This would improve performance and reduce database load
+Error Handling:
+While you have basic error handling, we could add more specific error types
+This would help with debugging and user feedback
+We could also add logging for better monitoring
+Scraping Logic:
+The current implementation fetches all listings at once
+We could add pagination support
+This would be more efficient for large result sets
+Email Notifications:
+The email template is static
+We could make it more dynamic
+Add support for different notification types
