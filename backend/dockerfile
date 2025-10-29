@@ -1,5 +1,5 @@
-# Use an official Python runtime as the base image
-FROM python:3.10
+# Use an official Python runtime as a base image
+FROM python:3.10-slim-buster AS build
 
 # Set the working directory in the container
 WORKDIR /app
@@ -12,6 +12,17 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application code to the container
 COPY . .
+
+# Start a new stage for the production image
+FROM python:3.10-slim-buster
+
+WORKDIR /app
+
+# Copy only the necessary files from the build stage
+COPY --from=build /app/ ./ 
+
+# Install dependencies again
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Specify the command to run when the container starts
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
